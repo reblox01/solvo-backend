@@ -1,4 +1,4 @@
-import google.generativeai as generativeai
+import google.generativeai as genai
 import ast
 import json
 from PIL import  Image
