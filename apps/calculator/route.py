@@ -9,14 +9,15 @@ router = APIRouter()
 
 @router.post('')
 async def run(data: ImageData):
-    image_data = base64.b64decode(data.image.split(','[1]))
+    image_data = base64.b64decode(data.image.split(',')[1])
     image_bytes = BytesIO(image_data)
     image = Image.open(image_bytes)
     responses = analyze_image(image, dict_of_vars=data.dict_of_vars)
     data = []
     for response in responses:
         data.append(response)
-    print('response in route: ', response) # test if response coming
+        print('response in route: ', response)  # Moved inside loop to print each response
+    
     return {
         "message": "Image Processed",
         "type": "success",

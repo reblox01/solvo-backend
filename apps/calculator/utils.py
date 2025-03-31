@@ -10,37 +10,90 @@ model = genai.GenerativeModel(model_name="gemini-1.5-flash")
 def analyze_image(img: Image, dict_of_vars: dict):
     dict_of_vars_str = json.dumps(dict_of_vars, ensure_ascii=False)
     prompt = (
-        f"You have been given an image with some mathematical expressions, equations, or graphical problems, and you need to solve them. "
-        f"Note: Use the PEMDAS rule for solving mathematical expressions. PEMDAS stands for the Priority Order: Parentheses, Exponents, Multiplication and Division (from left to right), Addition and Subtraction (from left to right). Parentheses have the highest priority, followed by Exponents, then Multiplication and Division, and lastly Addition and Subtraction. "
-        f"For example: "
-        f"Q. 2 + 3 * 4 "
-        f"(3 * 4) => 12, 2 + 12 = 14. "
-        f"Q. 2 + 3 + 5 * 4 - 8 / 2 "
-        f"5 * 4 => 20, 8 / 2 => 4, 2 + 3 => 5, 5 + 20 => 25, 25 - 4 => 21. "
-        f"YOU CAN HAVE FIVE TYPES OF EQUATIONS/EXPRESSIONS IN THIS IMAGE, AND ONLY ONE CASE SHALL APPLY EVERY TIME: "
-        f"Following are the cases: "
-        f"1. Simple mathematical expressions like 2 + 2, 3 * 4, 5 / 6, 7 - 8, etc.: In this case, solve and return the answer in the format of a LIST OF ONE DICT [{{'expr': given expression, 'result': calculated answer}}]. "
-        f"2. Set of Equations like x^2 + 2x + 1 = 0, 3y + 4x = 0, 5x^2 + 6y + 7 = 12, etc.: In this case, solve for the given variable, and the format should be a COMMA SEPARATED LIST OF DICTS, with dict 1 as {{'expr': 'x', 'result': 2, 'assign': True}} and dict 2 as {{'expr': 'y', 'result': 5, 'assign': True}}. This example assumes x was calculated as 2, and y as 5. Include as many dicts as there are variables. "
-        f"3. Assigning values to variables like x = 4, y = 5, z = 6, etc.: In this case, assign values to variables and return another key in the dict called {{'assign': True}}, keeping the variable as 'expr' and the value as 'result' in the original dictionary. RETURN AS A LIST OF DICTS. "
-        f"4. Analyzing Graphical Math problems, which are word problems represented in drawing form, such as cars colliding, trigonometric problems, problems on the Pythagorean theorem, adding runs from a cricket wagon wheel, etc. These will have a drawing representing some scenario and accompanying information with the image. PAY CLOSE ATTENTION TO DIFFERENT COLORS FOR THESE PROBLEMS. You need to return the answer in the format of a LIST OF ONE DICT [{{'expr': given expression, 'result': calculated answer}}]. "
-        f"5. Detecting Abstract Concepts that a drawing might show, such as love, hate, jealousy, patriotism, or a historic reference to war, invention, discovery, quote, etc. USE THE SAME FORMAT AS OTHERS TO RETURN THE ANSWER, where 'expr' will be the explanation of the drawing, and 'result' will be the abstract concept. "
-        f"Analyze the equation or expression in this image and return the answer according to the given rules: "
-        f"Make sure to use extra backslashes for escape characters like \\f -> \\\\f, \\n -> \\\\n, etc. "
-        f"Here is a dictionary of user-assigned variables. If the given expression has any of these variables, use its actual value from this dictionary accordingly: {dict_of_vars_str}. "
-        f"DO NOT USE BACKTICKS OR MARKDOWN FORMATTING. "
-        f"PROPERLY QUOTE THE KEYS AND VALUES IN THE DICTIONARY FOR EASIER PARSING WITH Python's ast.literal_eval."
+        f"You are a mathematical expression analyzer. Analyze the image and return ONLY a Python list of dictionaries.\n\n"
+        f"RESPONSE FORMAT:\n"
+        f"- Return ONLY a Python list of dictionaries\n"
+        f"- Use proper Python string quotes\n"
+        f"- Make sure all values are strings\n"
+        f"- No explanations or additional text\n"
+        f"- Format text with proper spaces between words\n\n"
+        f"DETAILED RULES AND EXAMPLES:\n"
+        f"1. Simple mathematical expressions:\n"
+        f"   Input: 2 + 3 * 4\n"
+        f"   Steps: (3 * 4) => 12, 2 + 12 = 14\n"
+        f"   Return: [{{'expr': '2 + 3 * 4', 'result': '14'}}]\n\n"
+        f"2. Complex expressions with PEMDAS:\n"
+        f"   Input: 2 + 3 + 5 * 4 - 8 / 2\n"
+        f"   Steps: 5 * 4 => 20, 8 / 2 => 4, 2 + 3 => 5, 5 + 20 => 25, 25 - 4 => 21\n"
+        f"   Return: [{{'expr': '2 + 3 + 5 * 4 - 8 / 2', 'result': '21'}}]\n\n"
+        f"3. Variable assignments:\n"
+        f"   Input: x = 5\n"
+        f"   Return: [{{'expr': 'x', 'result': '5', 'assign': True}}]\n\n"
+        f"4. Equations with variables:\n"
+        f"   Input: x^2 + 2x + 1 = 0\n"
+        f"   Return: [{{'expr': 'x', 'result': '-1', 'assign': True}}]\n\n"
+        f"5. Multiple variables:\n"
+        f"   Input: 3y + 4x = 12, y = 2\n"
+        f"   Return: [{{'expr': 'y', 'result': '2', 'assign': True}}, {{'expr': 'x', 'result': '1.5', 'assign': True}}]\n\n"
+        f"6. Word problems and graphical math:\n"
+        f"   Input: howmuchdoesittaketodropdown\n"
+        f"   BAD: [{{'expr': 'howmuchdoesittaketodropdown', 'result': '10'}}]\n"
+        f"   GOOD: [{{'expr': 'How much does it take to drop down', 'result': '10'}}]\n\n"
+        f"   For problems involving scenarios, drawings, or diagrams:\n"
+        f"   - Add proper spaces between words in the description\n"
+        f"   - Make the text readable and natural\n"
+        f"   - Keep mathematical precision in the result\n"
+        f"   Example: [{{'expr': 'Car traveling 60 mph for 2 hours', 'result': '120'}}]\n\n"
+        f"7. Abstract concepts:\n"
+        f"   For drawings showing concepts:\n"
+        f"   - Use proper spacing and punctuation\n"
+        f"   - Make descriptions clear and readable\n"
+        f"   Example: [{{'expr': 'Drawing shows heart shapes and positive emotions', 'result': 'love'}}]\n\n"
+        f"Available variables and their values: {dict_of_vars_str}\n\n"
+        f"IMPORTANT:\n"
+        f"- Follow PEMDAS: Parentheses, Exponents, Multiplication/Division (left to right), Addition/Subtraction (left to right)\n"
+        f"- Return ONLY the Python list, no other text\n"
+        f"- All values must be strings\n"
+        f"- Use proper Python dictionary format\n"
+        f"- Always add spaces between words in text descriptions\n"
+        f"- Make text human-readable and properly formatted\n"
     )
+    
     response = model.generate_content([prompt, img])
-    print(response.text)
+    print("AI Response:", response.text)
     answers = []
+    
+    # Clean the response text
+    clean_text = response.text.strip()
+    if not clean_text.startswith('['):
+        # Try to find the list in the response
+        start = clean_text.find('[')
+        if start != -1:
+            clean_text = clean_text[start:]
+    if not clean_text.endswith(']'):
+        end = clean_text.rfind(']')
+        if end != -1:
+            clean_text = clean_text[:end+1]
+    
     try:
-        answers = ast.literal_eval(response.text)
+        answers = ast.literal_eval(clean_text)
+        if not isinstance(answers, list):
+            answers = [answers] if isinstance(answers, dict) else []
     except Exception as e:
-        print(f"Error in parsing response: {e}")
-    print('returned asnwer: ', answers)
+        print(f"Error parsing response: {e}")
+        answers = []
+    
+    # Ensure each answer has the required format
+    formatted_answers = []
     for answer in answers:
-        if 'assign' in answers:
-            answer['assign'] = True
-        else:
-            answer['assign'] = False
-    return answers
+        if isinstance(answer, dict):
+            if 'expr' in answer and 'result' in answer:
+                if 'assign' not in answer:
+                    answer['assign'] = False
+                # Add spaces between words if they're missing
+                if isinstance(answer['expr'], str):
+                    answer['expr'] = ' '.join(answer['expr'].replace('_', ' ').split())
+                formatted_answers.append(answer)
+    
+    print('Formatted answers:', formatted_answers)
+    return formatted_answers
