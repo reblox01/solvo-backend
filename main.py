@@ -6,6 +6,8 @@ import uvicorn
 from apps.calculator.route import router as calculator_router
 from constants import SERVER_URL, PORT, ENV
 from mangum import Mangum
+from apps.calculator.utils import analyze_image
+import os
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -13,13 +15,24 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-# Configure CORS
+# Configure CORS with specific origins
+origins = [
+    "http://localhost:5173",    # Local development
+    "http://localhost:3000",    # Alternative local port
+    "http://127.0.0.1:5173",   # Local development alternative
+    "http://127.0.0.1:3000",   # Alternative local port
+    "https://solvo-frontend.vercel.app",  # Your frontend Vercel domain
+    "https://solvoai.vercel.app",         # Alternative frontend domain
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins
+    allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=600,
 )
 
 @app.get("/")
