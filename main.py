@@ -23,7 +23,7 @@ origins = [
     "http://127.0.0.1:3000",   # Alternative local port
     "https://solvo-frontend.vercel.app",  # Your frontend Vercel domain
     "https://solvoai.vercel.app",         # Alternative frontend domain
-    "https://solvo-backend.onrender.com", # Render deployment
+    "#", # Render deployment
 ]
 
 app.add_middleware(
