@@ -19,40 +19,76 @@ Watch Solvo in action on YouTube (not available currently):
 
 ## Installation
 
-### Prerequisites
+This repository contains the backend API implemented with FastAPI. The frontend (separate repo) is built with Node/React.
 
-- Node.js (v14 or later)
-- npm or yarn
+### Prerequisites (backend)
 
-### Steps
+- Python 3.10 or later
+- `pip` and `virtualenv` (or use `python -m venv`)
 
-1. **Clone the Repository:**
+### Backend - Run locally
+
+1. **Clone the repository and enter the project:**
 
    ```bash
    git clone https://github.com/yourusername/solvo.git
-   cd solvo
+   cd solvo-backend
    ```
 
-2. **Install Dependencies:**
+2. **Create and activate a virtual environment:**
+
+   - macOS / Linux:
+
+     ```bash
+     python3 -m venv venv
+     source venv/bin/activate
+     ```
+
+   - Windows (PowerShell):
+
+     ```powershell
+     python -m venv venv
+     venv\Scripts\Activate.ps1
+     ```
+
+3. **Install Python dependencies:**
 
    ```bash
-   npm install
-   # or
-   yarn install
+   pip install -r requirements.txt
    ```
 
-3. **Run the App:**
+4. **Set required environment variables:**
+
+   Create a `.env` file in the project root with at least your Gemini API key:
+
+   ```text
+   GEMINI_API_KEY=your_gemini_api_key_here
+   ```
+
+   The backend uses `python-dotenv` to load environment variables.
+
+5. **Run the API (development):**
+
+   You can run the server either with the included runner or directly with `uvicorn`:
 
    ```bash
-   npm start
-   # or
-   yarn start
+   # Option A - run via the module (calls uvicorn)
+   python main.py
+
+   # Option B - run uvicorn with auto-reload
+   uvicorn main:app --reload --host 0.0.0.0 --port 8000
    ```
 
-4. **Open in Browser:**
+6. **API endpoints (local):**
 
-  Visit [http://localhost:3000](http://localhost:3000) in your web browser.
+   - `GET /` - health/welcome message
+   - `POST /analyze` - accepts an image file upload (`multipart/form-data`) and returns analysis
+   - `POST /calculate` - accepts JSON image data (base64) and returns structured responses
 
+Notes:
+
+- The project includes a `Mangum` handler for serverless deployments (e.g., Vercel/Lambda).
+- If you deploy to a serverless platform, follow that platform's deployment docs and ensure `GEMINI_API_KEY` is set in the environment.
 
 ## Usage
 
