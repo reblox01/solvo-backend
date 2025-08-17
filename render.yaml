@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: solvo-backend
+    env: docker
+    branch: master
+    dockerfilePath: Dockerfile
+    plan: starter
+    autoDeploy: true
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
+
+
