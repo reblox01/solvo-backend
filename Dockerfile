@@ -13,10 +13,9 @@ RUN apt-get update && \
 
 # Copy only requirements first to leverage Docker cache
 COPY requirements.txt ./
-COPY netlify/functions/requirements.txt ./netlify_functions_requirements.txt
 
 RUN python -m pip install --upgrade pip setuptools wheel && \
-    pip install -r requirements.txt -r netlify_functions_requirements.txt
+    pip install -r requirements.txt
 
 # Copy app code
 COPY . .
