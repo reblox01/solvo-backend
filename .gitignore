@@ -175,10 +175,11 @@ poetry.toml
 pyrightconfig.json
 
 # End of https://www.toptal.com/developers/gitignore/api/python
-.vercel
-
-.vercel
+.vercel/
 .env*.local
 
 # Local Netlify folder
 .netlify
+
+.vercel
+nul
