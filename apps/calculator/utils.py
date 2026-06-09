@@ -1,10 +1,15 @@
 from google import genai
 import ast
 import json
+import logging
 from PIL import Image
 from constants import GEMINI_API_KEY
 
 client = genai.Client(api_key=GEMINI_API_KEY)
+logger = logging.getLogger("solvo-backend")
+
+# Models in priority order — first with free tier quota wins
+MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
 
 
 def analyze_image(img: Image, dict_of_vars: dict):
@@ -59,10 +64,27 @@ def analyze_image(img: Image, dict_of_vars: dict):
         f"- Make text human-readable and properly formatted\n"
     )
     
-    response = client.models.generate_content(
-        model="gemini-2.0-flash",
-        contents=[prompt, img]
-    )
+    # Try models in order until one succeeds (handles deprecation & quota issues)
+    last_error = None
+    response = None
+    for model_name in MODELS:
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=[prompt, img]
+            )
+            logger.info("Successfully used model: %s", model_name)
+            break
+        except Exception as e:
+            last_error = e
+            logger.warning("Model %s failed: %s", model_name, e)
+            continue
+
+    if response is None:
+        raise RuntimeError(
+            f"All Gemini models failed. Last error: {last_error}"
+        )
+
     print("AI Response:", response.text)
     answers = []
     
