@@ -1,5 +1,8 @@
 from fastapi import APIRouter
 import base64
+import logging
+
+logger = logging.getLogger("solvo-backend")
 from io import BytesIO
 from apps.calculator.utils import analyze_image
 from schema import ImageData
@@ -16,7 +19,7 @@ async def run(data: ImageData):
     data = []
     for response in responses:
         data.append(response)
-        print('response in route: ', response)  # Moved inside loop to print each response
+        logger.debug("response in route: %s", response)
     
     return {
         "message": "Image Processed",

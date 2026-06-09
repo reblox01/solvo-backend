@@ -2,14 +2,19 @@ from google import genai
 import ast
 import json
 import logging
+import time
 from PIL import Image
 from constants import GEMINI_API_KEY
 
 client = genai.Client(api_key=GEMINI_API_KEY)
 logger = logging.getLogger("solvo-backend")
 
-# Models in priority order — first with free tier quota wins
-MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+# Models in priority order — gemini-1.5-flash removed (deprecated, returns 404)
+MODELS = ["gemini-2.5-flash", "gemini-2.0-flash"]
+
+# Retry config for transient errors (503 overload, 429 quota)
+MAX_RETRIES = 2
+RETRY_DELAY_SECONDS = 5
 
 
 def analyze_image(img: Image, dict_of_vars: dict):
@@ -64,28 +69,52 @@ def analyze_image(img: Image, dict_of_vars: dict):
         f"- Make text human-readable and properly formatted\n"
     )
     
-    # Try models in order until one succeeds (handles deprecation & quota issues)
+    # Try models in order with retries for transient errors
     last_error = None
     response = None
     for model_name in MODELS:
-        try:
-            response = client.models.generate_content(
-                model=model_name,
-                contents=[prompt, img]
-            )
-            logger.info("Successfully used model: %s", model_name)
+        for attempt in range(1 + MAX_RETRIES):
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=[prompt, img]
+                )
+                logger.info("Successfully used model: %s (attempt %d)", model_name, attempt + 1)
+                break
+            except Exception as e:
+                last_error = e
+                error_str = str(e)
+                # 503 = overloaded, 429 = rate-limited — worth retrying
+                is_transient = "503" in error_str or "429" in error_str
+                if is_transient and attempt < MAX_RETRIES:
+                    logger.warning("Model %s attempt %d failed (transient), retrying in %ds: %s",
+                                   model_name, attempt + 1, RETRY_DELAY_SECONDS, e)
+                    time.sleep(RETRY_DELAY_SECONDS)
+                else:
+                    logger.warning("Model %s failed (non-retryable or max retries): %s", model_name, e)
+                    break
+        if response is not None:
             break
-        except Exception as e:
-            last_error = e
-            logger.warning("Model %s failed: %s", model_name, e)
-            continue
 
     if response is None:
-        raise RuntimeError(
-            f"All Gemini models failed. Last error: {last_error}"
-        )
+        # Provide a user-friendly error message
+        error_msg = str(last_error) if last_error else "Unknown error"
+        if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
+            raise RuntimeError(
+                "Gemini API quota exhausted. Please wait a moment and try again, "
+                "or upgrade your API plan at https://ai.google.dev/gemini-api/docs/rate-limits"
+            )
+        elif "404" in error_msg or "NOT_FOUND" in error_msg:
+            raise RuntimeError(
+                "Gemini model not available. Please check your API key and model configuration."
+            )
+        elif "503" in error_msg or "UNAVAILABLE" in error_msg:
+            raise RuntimeError(
+                "Gemini API is temporarily overloaded. Please try again in a few seconds."
+            )
+        raise RuntimeError(f"All Gemini models failed. Last error: {last_error}")
 
-    print("AI Response:", response.text)
+    logger.debug("AI Response: %s", response.text)
     answers = []
     
     # Clean the response text
@@ -120,5 +149,5 @@ def analyze_image(img: Image, dict_of_vars: dict):
                     answer['expr'] = ' '.join(answer['expr'].replace('_', ' ').split())
                 formatted_answers.append(answer)
     
-    print('Formatted answers:', formatted_answers)
+    logger.debug("Formatted answers: %s", formatted_answers)
     return formatted_answers
