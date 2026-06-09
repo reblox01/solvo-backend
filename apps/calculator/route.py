@@ -13,8 +13,8 @@ router = APIRouter()
 @router.post('')
 async def run(data: ImageData):
     image_data = base64.b64decode(data.image.split(',')[1])
-    image_bytes = BytesIO(image_data)
-    image = Image.open(image_bytes)
+    image = Image.open(BytesIO(image_data))
+    image.load()  # Force full read into memory so stream position doesn't matter
     responses = analyze_image(image, dict_of_vars=data.dict_of_vars)
     data = []
     for response in responses:
