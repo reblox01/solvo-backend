@@ -1,11 +1,11 @@
-import google.generativeai as genai
+from google import genai
 import ast
 import json
-from PIL import  Image
+from PIL import Image
 from constants import GEMINI_API_KEY
 
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel(model_name="gemini-1.5-flash")
+client = genai.Client(api_key=GEMINI_API_KEY)
+
 
 def analyze_image(img: Image, dict_of_vars: dict):
     dict_of_vars_str = json.dumps(dict_of_vars, ensure_ascii=False)
@@ -59,7 +59,10 @@ def analyze_image(img: Image, dict_of_vars: dict):
         f"- Make text human-readable and properly formatted\n"
     )
     
-    response = model.generate_content([prompt, img])
+    response = client.models.generate_content(
+        model="gemini-2.0-flash",
+        contents=[prompt, img]
+    )
     print("AI Response:", response.text)
     answers = []
     
