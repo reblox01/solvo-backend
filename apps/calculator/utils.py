@@ -19,7 +19,7 @@ GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash"]
 
 # NVIDIA NIM config (OpenAI-compatible endpoint)
 NIM_BASE_URL = "https://integrate.api.nvidia.com/v1"
-NIM_MODELS = ["nvidia/llava-1.5-7b-hf"]
+NIM_MODELS = ["nvidia/nemotron-nano-12b-v2-vl", "meta/llama-3.2-11b-vision-instruct"]
 
 # Retry config for the fallback retry after race
 FALLBACK_RETRIES = 2
