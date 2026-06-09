@@ -6,3 +6,4 @@ SERVER_URL = '0.0.0.0'
 PORT = 9000
 ENV = 'dev'
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+NIM_API_KEY = os.getenv('NIM_API_KEY')

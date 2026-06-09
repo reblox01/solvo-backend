@@ -1,25 +1,37 @@
 from google import genai
 import ast
+import base64
+import concurrent.futures
 import json
 import logging
 import time
+from io import BytesIO
 from PIL import Image
-from constants import GEMINI_API_KEY
+import requests as http_requests
 
-client = genai.Client(api_key=GEMINI_API_KEY)
+from constants import GEMINI_API_KEY, NIM_API_KEY
+
+gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 logger = logging.getLogger("solvo-backend")
 
-# Models in priority order — gemini-1.5-flash removed (deprecated, returns 404)
-MODELS = ["gemini-2.5-flash", "gemini-2.0-flash"]
+# Gemini models in priority order
+GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash"]
 
-# Retry config for transient errors (503 overload, 429 quota)
-MAX_RETRIES = 2
-RETRY_DELAY_SECONDS = 5
+# NVIDIA NIM config (OpenAI-compatible endpoint)
+NIM_BASE_URL = "https://integrate.api.nvidia.com/v1"
+NIM_MODELS = ["nvidia/llava-1.5-7b-hf"]
+
+# Retry config for the fallback retry after race
+FALLBACK_RETRIES = 2
+FALLBACK_RETRY_DELAY = 5
+
+# Timeout for each provider call during the race (seconds)
+RACE_TIMEOUT = 30
 
 
-def analyze_image(img: Image, dict_of_vars: dict):
+def _build_prompt(dict_of_vars: dict) -> str:
     dict_of_vars_str = json.dumps(dict_of_vars, ensure_ascii=False)
-    prompt = (
+    return (
         f"You are a mathematical expression analyzer. Analyze the image and return ONLY a Python list of dictionaries.\n\n"
         f"RESPONSE FORMAT:\n"
         f"- Return ONLY a Python list of dictionaries\n"
@@ -68,86 +80,156 @@ def analyze_image(img: Image, dict_of_vars: dict):
         f"- Always add spaces between words in text descriptions\n"
         f"- Make text human-readable and properly formatted\n"
     )
-    
-    # Try models in order with retries for transient errors
+
+
+def _image_to_base64(img: Image) -> str:
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode("utf-8")
+
+
+def _call_gemini(prompt: str, img: Image) -> str:
+    """Try all Gemini models in order. Returns raw response text or raises."""
     last_error = None
-    response = None
-    for model_name in MODELS:
-        for attempt in range(1 + MAX_RETRIES):
-            try:
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=[prompt, img]
-                )
-                logger.info("Successfully used model: %s (attempt %d)", model_name, attempt + 1)
-                break
-            except Exception as e:
-                last_error = e
-                error_str = str(e)
-                # 503 = overloaded, 429 = rate-limited — worth retrying
-                is_transient = "503" in error_str or "429" in error_str
-                if is_transient and attempt < MAX_RETRIES:
-                    logger.warning("Model %s attempt %d failed (transient), retrying in %ds: %s",
-                                   model_name, attempt + 1, RETRY_DELAY_SECONDS, e)
-                    time.sleep(RETRY_DELAY_SECONDS)
-                else:
-                    logger.warning("Model %s failed (non-retryable or max retries): %s", model_name, e)
-                    break
-        if response is not None:
-            break
+    for model_name in GEMINI_MODELS:
+        try:
+            response = gemini_client.models.generate_content(
+                model=model_name,
+                contents=[prompt, img],
+            )
+            logger.info("Gemini model %s succeeded", model_name)
+            return response.text
+        except Exception as e:
+            last_error = e
+            logger.warning("Gemini model %s failed: %s", model_name, e)
+    raise RuntimeError(f"Gemini failed: {last_error}")
 
-    if response is None:
-        # Provide a user-friendly error message
-        error_msg = str(last_error) if last_error else "Unknown error"
-        if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
-            raise RuntimeError(
-                "Gemini API quota exhausted. Please wait a moment and try again, "
-                "or upgrade your API plan at https://ai.google.dev/gemini-api/docs/rate-limits"
-            )
-        elif "404" in error_msg or "NOT_FOUND" in error_msg:
-            raise RuntimeError(
-                "Gemini model not available. Please check your API key and model configuration."
-            )
-        elif "503" in error_msg or "UNAVAILABLE" in error_msg:
-            raise RuntimeError(
-                "Gemini API is temporarily overloaded. Please try again in a few seconds."
-            )
-        raise RuntimeError(f"All Gemini models failed. Last error: {last_error}")
 
-    logger.debug("AI Response: %s", response.text)
-    answers = []
-    
-    # Clean the response text
-    clean_text = response.text.strip()
-    if not clean_text.startswith('['):
-        # Try to find the list in the response
-        start = clean_text.find('[')
+def _call_nim(prompt: str, img: Image) -> str:
+    """Call NVIDIA NIM via OpenAI-compatible endpoint. Returns raw response text or raises."""
+    if not NIM_API_KEY:
+        raise RuntimeError("NIM_API_KEY not configured")
+
+    img_b64 = _image_to_base64(img)
+    url = f"{NIM_BASE_URL}/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {NIM_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+    for model_name in NIM_MODELS:
+        payload = {
+            "model": model_name,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/png;base64,{img_b64}"},
+                        },
+                    ],
+                }
+            ],
+            "max_tokens": 1024,
+            "temperature": 0.1,
+        }
+        try:
+            resp = http_requests.post(url, headers=headers, json=payload, timeout=RACE_TIMEOUT)
+            resp.raise_for_status()
+            data = resp.json()
+            text = data["choices"][0]["message"]["content"]
+            logger.info("NIM model %s succeeded", model_name)
+            return text
+        except Exception as e:
+            logger.warning("NIM model %s failed: %s", model_name, e)
+    raise RuntimeError("All NIM models failed")
+
+
+def _parse_response(text: str) -> list[dict]:
+    """Parse a Python-list-of-dicts response from any provider."""
+    clean_text = text.strip()
+    if not clean_text.startswith("["):
+        start = clean_text.find("[")
         if start != -1:
             clean_text = clean_text[start:]
-    if not clean_text.endswith(']'):
-        end = clean_text.rfind(']')
+    if not clean_text.endswith("]"):
+        end = clean_text.rfind("]")
         if end != -1:
-            clean_text = clean_text[:end+1]
-    
+            clean_text = clean_text[: end + 1]
+
+    answers = []
     try:
         answers = ast.literal_eval(clean_text)
         if not isinstance(answers, list):
             answers = [answers] if isinstance(answers, dict) else []
     except Exception as e:
-        print(f"Error parsing response: {e}")
-        answers = []
-    
-    # Ensure each answer has the required format
-    formatted_answers = []
+        logger.error("Failed to parse response: %s", e)
+        return []
+
+    formatted = []
     for answer in answers:
-        if isinstance(answer, dict):
-            if 'expr' in answer and 'result' in answer:
-                if 'assign' not in answer:
-                    answer['assign'] = False
-                # Add spaces between words if they're missing
-                if isinstance(answer['expr'], str):
-                    answer['expr'] = ' '.join(answer['expr'].replace('_', ' ').split())
-                formatted_answers.append(answer)
-    
-    logger.debug("Formatted answers: %s", formatted_answers)
-    return formatted_answers
+        if isinstance(answer, dict) and "expr" in answer and "result" in answer:
+            answer.setdefault("assign", False)
+            if isinstance(answer["expr"], str):
+                answer["expr"] = " ".join(answer["expr"].replace("_", " ").split())
+            formatted.append(answer)
+    return formatted
+
+
+def analyze_image(img: Image, dict_of_vars: dict) -> list[dict]:
+    """
+    Race Gemini and NVIDIA NIM in parallel.
+    First successful response wins.
+    If both fail, retry with Gemini (more reliable).
+    """
+    prompt = _build_prompt(dict_of_vars)
+
+    # --- Parallel race ---
+    results: list[tuple[str, str]] = []  # (provider_name, response_text)
+    errors: list[tuple[str, str]] = []
+
+    def _gemini_task() -> None:
+        try:
+            text = _call_gemini(prompt, img)
+            results.append(("gemini", text))
+        except Exception as e:
+            errors.append(("gemini", str(e)))
+
+    def _nim_task() -> None:
+        try:
+            text = _call_nim(prompt, img)
+            results.append(("nim", text))
+        except Exception as e:
+            errors.append(("nim", str(e)))
+
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+    try:
+        futures = [executor.submit(_gemini_task), executor.submit(_nim_task)]
+        concurrent.futures.wait(futures, timeout=RACE_TIMEOUT + 5, return_when=concurrent.futures.FIRST_COMPLETED)
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+
+    if results:
+        provider, text = results[0]  # first completed result
+        logger.info("Race won by %s", provider)
+        return _parse_response(text)
+
+    # --- Both failed — fallback retry with Gemini only ---
+    logger.warning("Both providers failed. Gemini: %s | NIM: %s. Retrying Gemini...",
+                   dict(errors).get("gemini"), dict(errors).get("nim"))
+
+    for attempt in range(1, FALLBACK_RETRIES + 1):
+        try:
+            text = _call_gemini(prompt, img)
+            logger.info("Fallback Gemini attempt %d succeeded", attempt)
+            return _parse_response(text)
+        except Exception as e:
+            logger.warning("Fallback Gemini attempt %d failed: %s", attempt, e)
+            if attempt < FALLBACK_RETRIES:
+                time.sleep(FALLBACK_RETRY_DELAY)
+
+    # All exhausted
+    error_summary = " | ".join(f"{p}: {e}" for p, e in errors)
+    raise RuntimeError(f"All AI providers failed. {error_summary}")
