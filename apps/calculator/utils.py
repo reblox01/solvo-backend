@@ -83,6 +83,9 @@ def _build_prompt(dict_of_vars: dict) -> str:
 
 
 def _image_to_base64(img: Image) -> str:
+    # Convert to RGB to handle palette, RGBA, LA, and other edge-case modes
+    if img.mode not in ("RGB", "L"):
+        img = img.convert("RGB")
     buf = BytesIO()
     img.save(buf, format="PNG")
     return base64.b64encode(buf.getvalue()).decode("utf-8")
@@ -216,17 +219,28 @@ def analyze_image(img: Image, dict_of_vars: dict) -> list[dict]:
         logger.info("Race won by %s", provider)
         return _parse_response(text)
 
-    # --- Both failed — fallback retry with Gemini only ---
-    logger.warning("Both providers failed. Gemini: %s | NIM: %s. Retrying Gemini...",
+    # --- Both failed — smart fallback retry ---
+    # Check if Gemini is quota-exhausted (429) so we retry NIM instead
+    gemini_quota_exhausted = any(
+        "429" in e or "RESOURCE_EXHAUSTED" in e
+        for pname, e in errors if pname == "gemini"
+    )
+
+    logger.warning("Both providers failed. Gemini: %s | NIM: %s. Retrying...",
                    dict(errors).get("gemini"), dict(errors).get("nim"))
 
     for attempt in range(1, FALLBACK_RETRIES + 1):
         try:
-            text = _call_gemini(prompt, img)
-            logger.info("Fallback Gemini attempt %d succeeded", attempt)
+            # If Gemini is quota-exhausted, retry NIM instead
+            if gemini_quota_exhausted:
+                text = _call_nim(prompt, img)
+                logger.info("Fallback NIM attempt %d succeeded", attempt)
+            else:
+                text = _call_gemini(prompt, img)
+                logger.info("Fallback Gemini attempt %d succeeded", attempt)
             return _parse_response(text)
         except Exception as e:
-            logger.warning("Fallback Gemini attempt %d failed: %s", attempt, e)
+            logger.warning("Fallback attempt %d failed: %s", attempt, e)
             if attempt < FALLBACK_RETRIES:
                 time.sleep(FALLBACK_RETRY_DELAY)
 
