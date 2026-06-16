@@ -22,11 +22,11 @@ NIM_BASE_URL = "https://integrate.api.nvidia.com/v1"
 NIM_MODELS = ["nvidia/nemotron-nano-12b-v2-vl", "meta/llama-3.2-11b-vision-instruct"]
 
 # Retry config for the fallback retry after race
-FALLBACK_RETRIES = 2
-FALLBACK_RETRY_DELAY = 5
+FALLBACK_RETRIES = 1
+FALLBACK_RETRY_DELAY = 3
 
 # Timeout for each provider call during the race (seconds)
-RACE_TIMEOUT = 30
+RACE_TIMEOUT = 8
 
 
 def _build_prompt(dict_of_vars: dict) -> str:
@@ -210,7 +210,7 @@ def analyze_image(img: Image, dict_of_vars: dict) -> list[dict]:
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
     try:
         futures = [executor.submit(_gemini_task), executor.submit(_nim_task)]
-        concurrent.futures.wait(futures, timeout=RACE_TIMEOUT + 5, return_when=concurrent.futures.FIRST_COMPLETED)
+        concurrent.futures.wait(futures, timeout=RACE_TIMEOUT + 1, return_when=concurrent.futures.FIRST_COMPLETED)
     finally:
         executor.shutdown(wait=False, cancel_futures=True)
 
