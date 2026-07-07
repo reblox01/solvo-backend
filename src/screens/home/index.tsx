@@ -9,11 +9,6 @@ import { Eraser, Pencil, RotateCcw, Play, Palette, CornerUpLeft, CornerUpRight, 
 import logo from '/logo.svg';
 import { sanitizeLatex, isSafeObjectKey, validateCalculateResponse, validateFileUpload, sanitizeFilename } from '@/lib/sanitize';
 
-interface GeneratedResult {
-    expression: string;
-    answer: string;
-}
-
 interface Response {
     expr: string;
     result: string;
@@ -45,6 +40,7 @@ export default function Home() {
     const [canRedo, setCanRedo] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [hasDrawn, setHasDrawn] = useState(false);
 
     const updateStackStates = useCallback(() => {
         setCanUndo(undoStackRef.current.length > 0);
@@ -75,6 +71,7 @@ export default function Home() {
             setLatexExpression([]);
             setError(null);
             setDictOfVars({});
+            setHasDrawn(false);
             setReset(false);
         }
     }, [reset]);
@@ -211,6 +208,7 @@ export default function Home() {
         lastMidRef.current = pos;
         setIsDrawing(true);
         setShowPreview(true);
+        setHasDrawn(true);
         setPreviewPos({ x: e.clientX, y: e.clientY });
         setPreviewWidth(getStrokeWidthFromEvent(e));
     };
@@ -622,8 +620,9 @@ export default function Home() {
                 <Button
                     onClick={runRoute}
                     disabled={isLoading}
-                    className="bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-lg transition-all duration-200 disabled:opacity-50"
+                    className={`bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-lg transition-all duration-200 disabled:opacity-50 ${!hasDrawn && !isLoading ? 'animate-pulse' : ''}`}
                     size="icon"
+                    title={!hasDrawn ? 'Draw something, then tap to solve' : 'Solve'}
                 >
                     {isLoading ? (
                         <Loader2 className="h-5 w-5 animate-spin" />

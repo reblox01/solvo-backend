@@ -59,24 +59,18 @@ This repository contains the backend API implemented with FastAPI. The frontend 
 
 4. **Set required environment variables:**
 
-   Create a `.env` file in the project root with at least your Gemini API key:
+   Create a `.env` file in the project root with your OpenCode Zen API key:
 
    ```text
-   GEMINI_API_KEY=your_gemini_api_key_here
+   OPENCODE_ZEN_API_KEY=your_opencode_zen_api_key_here
    ```
 
-   The backend uses `python-dotenv` to load environment variables.
+   The backend uses `python-dotenv` to load environment variables. Get a key at https://opencode.ai/zen
 
 5. **Run the API (development):**
 
-   You can run the server either with the included runner or directly with `uvicorn`:
-
    ```bash
-   # Option A - run via the module (calls uvicorn)
-   python main.py
-
-   # Option B - run uvicorn with auto-reload
-   uvicorn main:app --reload --host 0.0.0.0 --port 8000
+   uvicorn api.index:app --reload --host 0.0.0.0 --port 9000
    ```
 
 6. **API endpoints (local):**
@@ -88,7 +82,7 @@ This repository contains the backend API implemented with FastAPI. The frontend 
 Notes:
 
 - The project includes a `Mangum` handler for serverless deployments (e.g., Vercel/Lambda).
-- If you deploy to a serverless platform, follow that platform's deployment docs and ensure `GEMINI_API_KEY` is set in the environment.
+- If you deploy to a serverless platform, ensure `OPENCODE_ZEN_API_KEY` is set in the environment.
 
 ## Usage
 
